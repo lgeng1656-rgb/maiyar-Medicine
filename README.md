@@ -42,7 +42,9 @@ copy .env.example .env
 
 图片和视频抽帧分析使用千问视觉模型：
 
-- `DASHSCOPE_API_KEY`
+- `QWEN_VL_API_KEY`（推荐）
+- `SILICONFLOW_API_KEY`（如果使用硅基流动）
+- `DASHSCOPE_API_KEY`（旧变量名，仍然兼容）
 - `QWEN_VL_BASE_URL`
 - `QWEN_VL_MODEL`
 
@@ -95,6 +97,6 @@ Cloudflare 需要配置：
 
 - KV binding：`MAIYA_KV`
 - AI 环境变量：`AI_API_KEY`、`AI_BASE_URL`、`AI_MODEL`、`AI_PROVIDER_LABEL`
-- 千问视觉环境变量：`DASHSCOPE_API_KEY`、`QWEN_VL_BASE_URL`、`QWEN_VL_MODEL`
+- 千问视觉环境变量：`QWEN_VL_API_KEY` 或 `SILICONFLOW_API_KEY`，以及 `QWEN_VL_BASE_URL`、`QWEN_VL_MODEL`
 
 没有配置千问视觉环境变量时，图片/视频解析接口会返回明确错误，普通文字知识库和聊天仍可使用。

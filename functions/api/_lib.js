@@ -175,8 +175,11 @@ export async function callExternalModel(env, { question, provider, messages = []
 }
 
 export async function callVisualModel(env, { frames, prompt, mediaType }) {
-  if (!env.DASHSCOPE_API_KEY || !env.QWEN_VL_BASE_URL) {
-    const error = new Error('还没有配置千问视觉模型。请配置 DASHSCOPE_API_KEY、QWEN_VL_BASE_URL 和 QWEN_VL_MODEL。');
+  const visualApiKey = env.QWEN_VL_API_KEY || env.SILICONFLOW_API_KEY || env.DASHSCOPE_API_KEY;
+  if (!visualApiKey || !env.QWEN_VL_BASE_URL) {
+    const error = new Error(
+      '还没有配置千问视觉模型。请配置 QWEN_VL_API_KEY 或 SILICONFLOW_API_KEY，并配置 QWEN_VL_BASE_URL 和 QWEN_VL_MODEL。',
+    );
     error.status = 503;
     throw error;
   }
@@ -211,7 +214,7 @@ export async function callVisualModel(env, { frames, prompt, mediaType }) {
   const response = await fetch(endpoint, {
     method: 'POST',
     headers: {
-      Authorization: `Bearer ${env.DASHSCOPE_API_KEY}`,
+      Authorization: `Bearer ${visualApiKey}`,
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
