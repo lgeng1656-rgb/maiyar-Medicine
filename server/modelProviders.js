@@ -33,9 +33,9 @@ export async function callExternalModel({ question, provider }) {
     return callOpenAICompatible({
       provider: 'api',
       label: providerLabels.api,
-      baseUrl: process.env.AI_BASE_URL || 'https://api.deepseek.com',
+      baseUrl: process.env.AI_BASE_URL || 'https://api.siliconflow.cn/v1',
       apiKey: process.env.AI_API_KEY,
-      model: process.env.AI_MODEL || 'deepseek-chat',
+      model: process.env.AI_MODEL || 'deepseek-ai/DeepSeek-V4-Flash',
       question,
     });
   }

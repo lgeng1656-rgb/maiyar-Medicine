@@ -59,9 +59,9 @@ export async function callExternalModel(env, { question, provider }) {
     };
   }
 
-  const baseUrl = env.AI_BASE_URL || 'https://api.deepseek.com';
-  const model = env.AI_MODEL || 'deepseek-chat';
-  const label = env.AI_PROVIDER_LABEL || 'API 模型';
+  const baseUrl = env.AI_BASE_URL || 'https://api.siliconflow.cn/v1';
+  const model = env.AI_MODEL || 'deepseek-ai/DeepSeek-V4-Flash';
+  const label = env.AI_PROVIDER_LABEL || '硅基流动';
   const endpoint = `${baseUrl.replace(/\/$/, '')}/chat/completions`;
 
   const response = await fetch(endpoint, {

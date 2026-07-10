@@ -38,6 +38,12 @@ copy .env.example .env
 - `AI_MODEL`
 - `AI_PROVIDER_LABEL`
 
+当前线上默认按硅基流动配置：
+
+- `AI_BASE_URL=https://api.siliconflow.cn/v1`
+- `AI_MODEL=deepseek-ai/DeepSeek-V4-Flash`
+- `AI_PROVIDER_LABEL=硅基流动`
+
 DeepSeek：
 
 - `DEEPSEEK_API_KEY`

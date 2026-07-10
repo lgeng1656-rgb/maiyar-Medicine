@@ -4,9 +4,9 @@
   "compatibility_date": "2026-07-10",
   "pages_build_output_dir": "dist",
   "vars": {
-    "AI_BASE_URL": "https://api.deepseek.com",
-    "AI_MODEL": "deepseek-chat",
-    "AI_PROVIDER_LABEL": "API 模型",
+    "AI_BASE_URL": "https://api.siliconflow.cn/v1",
+    "AI_MODEL": "deepseek-ai/DeepSeek-V4-Flash",
+    "AI_PROVIDER_LABEL": "硅基流动",
     "KNOWLEDGE_MIN_SCORE": "3"
   },
   "kv_namespaces": [
