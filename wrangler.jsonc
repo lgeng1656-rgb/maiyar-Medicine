@@ -6,8 +6,7 @@
   "vars": {
     "AI_BASE_URL": "https://api.siliconflow.cn/v1",
     "AI_MODEL": "deepseek-ai/DeepSeek-V4-Flash",
-    "AI_PROVIDER_LABEL": "硅基流动",
-    "KNOWLEDGE_MIN_SCORE": "3"
+    "AI_PROVIDER_LABEL": "硅基流动"
   },
   "kv_namespaces": [
     {
