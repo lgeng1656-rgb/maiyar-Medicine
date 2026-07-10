@@ -175,7 +175,8 @@ export async function callExternalModel(env, { question, provider, messages = []
 }
 
 export async function callVisualModel(env, { frames, prompt, mediaType }) {
-  const visualApiKey = env.QWEN_VL_API_KEY || env.SILICONFLOW_API_KEY || env.DASHSCOPE_API_KEY;
+  const visualBaseUrl = env.QWEN_VL_BASE_URL || '';
+  const visualApiKey = selectVisualApiKey(env, visualBaseUrl);
   if (!visualApiKey || !env.QWEN_VL_BASE_URL) {
     const error = new Error(
       '还没有配置千问视觉模型。请配置 QWEN_VL_API_KEY 或 SILICONFLOW_API_KEY，并配置 QWEN_VL_BASE_URL 和 QWEN_VL_MODEL。',
@@ -241,6 +242,17 @@ export async function callVisualModel(env, { frames, prompt, mediaType }) {
     model,
     analysis: data?.choices?.[0]?.message?.content || '',
   };
+}
+
+function selectVisualApiKey(env, baseUrl) {
+  const normalizedBaseUrl = String(baseUrl || '').toLowerCase();
+  if (normalizedBaseUrl.includes('siliconflow')) {
+    return env.SILICONFLOW_API_KEY || env.QWEN_VL_API_KEY || env.DASHSCOPE_API_KEY;
+  }
+  if (normalizedBaseUrl.includes('dashscope') || normalizedBaseUrl.includes('aliyuncs')) {
+    return env.DASHSCOPE_API_KEY || env.QWEN_VL_API_KEY || env.SILICONFLOW_API_KEY;
+  }
+  return env.QWEN_VL_API_KEY || env.SILICONFLOW_API_KEY || env.DASHSCOPE_API_KEY;
 }
 
 export function buildKnowledgeAnswer(question, matches) {
