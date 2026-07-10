@@ -4,6 +4,7 @@ import './styles.css';
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || '';
 const STORAGE_KEY = 'maiya-medical-ai-conversations';
+const TOKEN_KEY = 'maiya-medical-ai-token';
 
 function App() {
   const path = window.location.pathname;
@@ -39,7 +40,12 @@ function ChatPage() {
   const [health, setHealth] = useState(null);
   const [searchText, setSearchText] = useState('');
   const [conversations, setConversations] = useState(() => loadConversations());
-  const [activeId, setActiveId] = useState(() => conversations[0]?.id || null);
+  const [activeId, setActiveId] = useState(() => loadConversations()[0]?.id || null);
+  const [token, setToken] = useState(() => localStorage.getItem(TOKEN_KEY) || '');
+  const [user, setUser] = useState(null);
+  const [authOpen, setAuthOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [syncNotice, setSyncNotice] = useState('');
   const messagesEndRef = useRef(null);
 
   const activeConversation = useMemo(() => {
@@ -67,9 +73,44 @@ function ChatPage() {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
   }, [activeConversation?.messages, loading]);
 
+  useEffect(() => {
+    if (!token) return;
+    loadCurrentUser(token);
+  }, [token]);
+
+  async function loadCurrentUser(currentToken) {
+    try {
+      const me = await apiFetch('/api/me', { token: currentToken });
+      setUser(me.user);
+      const history = await apiFetch('/api/conversations', { token: currentToken });
+      const remoteConversations = history.conversations || [];
+      if (remoteConversations.length > 0) {
+        setConversations(remoteConversations);
+        setActiveId(remoteConversations[0]?.id || null);
+      } else if (conversations.length > 0) {
+        await saveCloudConversations(conversations, currentToken);
+      }
+      setSyncNotice('历史已同步');
+    } catch {
+      localStorage.removeItem(TOKEN_KEY);
+      setToken('');
+      setUser(null);
+      setSyncNotice('登录已过期');
+    }
+  }
+
+  function persistConversations(nextConversations) {
+    setConversations(nextConversations);
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(nextConversations));
+    if (token) {
+      saveCloudConversations(nextConversations, token).catch(() => setSyncNotice('历史同步失败'));
+    }
+  }
+
   function createNewChat() {
     const conversation = createConversation();
-    setConversations((current) => [conversation, ...current]);
+    const next = [conversation, ...conversations];
+    persistConversations(next);
     setActiveId(conversation.id);
     setQuestion('');
   }
@@ -87,25 +128,26 @@ function ChatPage() {
       createdAt: new Date().toISOString(),
     };
 
-    setQuestion('');
-    setLoading(true);
-    upsertConversation(currentConversation.id, {
+    const withUserMessage = upsertConversation(conversations, {
       ...currentConversation,
-      title: currentConversation.title === '新对话' ? buildTitle(trimmed) : currentConversation.title,
+      title:
+        currentConversation.title === '新对话'
+          ? buildTitle(trimmed)
+          : currentConversation.title,
       updatedAt: new Date().toISOString(),
       messages: [...currentConversation.messages, userMessage],
     });
+
+    setQuestion('');
+    setLoading(true);
     setActiveId(currentConversation.id);
+    persistConversations(withUserMessage);
 
     try {
-      const response = await fetch(`${API_BASE}/api/chat`, {
+      const data = await apiFetch('/api/chat', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ question: trimmed, provider }),
+        body: { question: trimmed, provider },
       });
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.error || '请求失败');
-
       const assistantMessage = {
         id: crypto.randomUUID(),
         role: 'assistant',
@@ -114,9 +156,10 @@ function ChatPage() {
         citations: data.citations || [],
         createdAt: new Date().toISOString(),
       };
-      appendMessage(currentConversation.id, assistantMessage);
+      const next = appendMessage(withUserMessage, currentConversation.id, assistantMessage);
+      persistConversations(next);
     } catch (error) {
-      appendMessage(currentConversation.id, {
+      const next = appendMessage(withUserMessage, currentConversation.id, {
         id: crypto.randomUUID(),
         role: 'assistant',
         sourceLabel: '系统错误',
@@ -124,44 +167,38 @@ function ChatPage() {
         citations: [],
         createdAt: new Date().toISOString(),
       });
+      persistConversations(next);
     } finally {
       setLoading(false);
     }
   }
 
-  function appendMessage(conversationId, message) {
-    setConversations((current) =>
-      current.map((conversation) =>
-        conversation.id === conversationId
-          ? {
-              ...conversation,
-              updatedAt: new Date().toISOString(),
-              messages: [...conversation.messages, message],
-            }
-          : conversation,
-      ),
-    );
-  }
-
-  function upsertConversation(conversationId, nextConversation) {
-    setConversations((current) => {
-      const exists = current.some((conversation) => conversation.id === conversationId);
-      const next = exists
-        ? current.map((conversation) =>
-            conversation.id === conversationId ? nextConversation : conversation,
-          )
-        : [nextConversation, ...current];
-
-      return next.sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt));
-    });
-  }
-
   function deleteConversation(conversationId) {
-    setConversations((current) => {
-      const next = current.filter((conversation) => conversation.id !== conversationId);
-      if (activeId === conversationId) setActiveId(next[0]?.id || null);
-      return next;
-    });
+    const next = conversations.filter((conversation) => conversation.id !== conversationId);
+    if (activeId === conversationId) setActiveId(next[0]?.id || null);
+    persistConversations(next);
+  }
+
+  function handleLoggedIn(nextToken, nextUser, remoteConversations) {
+    localStorage.setItem(TOKEN_KEY, nextToken);
+    setToken(nextToken);
+    setUser(nextUser);
+    setAuthOpen(false);
+
+    if (remoteConversations?.length) {
+      setConversations(remoteConversations);
+      setActiveId(remoteConversations[0]?.id || null);
+    } else if (conversations.length > 0) {
+      saveCloudConversations(conversations, nextToken).catch(() => setSyncNotice('历史同步失败'));
+    }
+    setSyncNotice('已登录并同步');
+  }
+
+  function logout() {
+    localStorage.removeItem(TOKEN_KEY);
+    setToken('');
+    setUser(null);
+    setSyncNotice('已退出登录，本设备仍保留本地历史');
   }
 
   const hasMessages = Boolean(activeConversation?.messages.length);
@@ -199,6 +236,7 @@ function ChatPage() {
           <div className="sidebar-status">
             <span>知识库 {health?.knowledge?.total ?? '-'} 条</span>
             <span>API {providerStatusText(health)}</span>
+            {syncNotice && <span>{syncNotice}</span>}
           </div>
         </div>
 
@@ -223,17 +261,33 @@ function ChatPage() {
         </div>
 
         <div className="sidebar-footer">
-          <div className="avatar">麦</div>
-          <div>
-            <strong>GG</strong>
-            <span>医疗知识库助手</span>
+          <Avatar user={user} />
+          <div className="account-copy">
+            <strong>{user?.username || '未登录用户'}</strong>
+            <span>{user?.email || '登录后可跨设备同步'}</span>
+          </div>
+          <div className="account-actions">
+            {user ? (
+              <>
+                <button type="button" onClick={() => setSettingsOpen(true)}>
+                  设置
+                </button>
+                <button type="button" onClick={logout}>
+                  退出
+                </button>
+              </>
+            ) : (
+              <button type="button" onClick={() => setAuthOpen(true)}>
+                邮箱登录
+              </button>
+            )}
           </div>
         </div>
       </aside>
 
       <main className="chat-surface">
         <header className="chat-topbar">
-          <span>麦芽医疗 AI</span>
+          <span>{activeConversation?.title || '麦芽医疗 AI'}</span>
           {activeConversation && (
             <button type="button" onClick={() => deleteConversation(activeConversation.id)}>
               删除当前对话
@@ -245,12 +299,12 @@ function ChatPage() {
           {!hasMessages && (
             <div className="ready-state">
               <h1>准备好了，随时开始</h1>
-              <p>先查麦芽知识库；如果没有命中，再调用已配置的 API。</p>
+              <p>先查麦芽知识库；如果没有足够相关资料，再调用已配置的 AI API。</p>
             </div>
           )}
 
           {activeConversation?.messages.map((message) => (
-            <MessageBubble key={message.id} message={message} />
+            <MessageBubble key={message.id} message={message} user={user} />
           ))}
           {loading && <div className="loading-line">正在检索知识库并生成回答...</div>}
           <div ref={messagesEndRef} />
@@ -287,6 +341,234 @@ function ChatPage() {
           医疗内容仅供学习和辅助参考，不能替代医生面诊、诊断或治疗。
         </p>
       </main>
+
+      {authOpen && (
+        <AuthDialog
+          onClose={() => setAuthOpen(false)}
+          onLoggedIn={handleLoggedIn}
+        />
+      )}
+      {settingsOpen && user && (
+        <SettingsDialog
+          token={token}
+          user={user}
+          onClose={() => setSettingsOpen(false)}
+          onUserChange={setUser}
+        />
+      )}
+    </div>
+  );
+}
+
+function AuthDialog({ onClose, onLoggedIn }) {
+  const [email, setEmail] = useState('');
+  const [code, setCode] = useState('');
+  const [step, setStep] = useState('email');
+  const [notice, setNotice] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  async function requestCode(event) {
+    event.preventDefault();
+    setBusy(true);
+    setNotice('');
+    try {
+      await apiFetch('/api/auth/request-code', {
+        method: 'POST',
+        body: { email },
+      });
+      setStep('code');
+      setNotice('验证码已发送，请查看邮箱。');
+    } catch (error) {
+      setNotice(error.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function verifyCode(event) {
+    event.preventDefault();
+    setBusy(true);
+    setNotice('');
+    try {
+      const login = await apiFetch('/api/auth/verify', {
+        method: 'POST',
+        body: { email, code },
+      });
+      const history = await apiFetch('/api/conversations', { token: login.token });
+      onLoggedIn(login.token, login.user, history.conversations || []);
+    } catch (error) {
+      setNotice(error.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Modal title="邮箱验证码登录" onClose={onClose}>
+      <form className="modal-form" onSubmit={step === 'email' ? requestCode : verifyCode}>
+        <label>
+          邮箱
+          <input
+            value={email}
+            onChange={(event) => setEmail(event.target.value)}
+            placeholder="name@example.com"
+            type="email"
+            required
+            disabled={step === 'code'}
+          />
+        </label>
+        {step === 'code' && (
+          <label>
+            验证码
+            <input
+              value={code}
+              onChange={(event) => setCode(event.target.value)}
+              placeholder="6 位数字"
+              inputMode="numeric"
+              required
+            />
+          </label>
+        )}
+        {notice && <p className="notice">{notice}</p>}
+        <button type="submit" disabled={busy}>
+          {busy ? '处理中...' : step === 'email' ? '发送验证码' : '登录'}
+        </button>
+      </form>
+    </Modal>
+  );
+}
+
+function SettingsDialog({ token, user, onClose, onUserChange }) {
+  const [username, setUsername] = useState(user.username || '');
+  const [avatarUrl, setAvatarUrl] = useState(user.avatarUrl || '');
+  const [newEmail, setNewEmail] = useState('');
+  const [emailCode, setEmailCode] = useState('');
+  const [notice, setNotice] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  async function saveProfile(event) {
+    event.preventDefault();
+    setBusy(true);
+    setNotice('');
+    try {
+      const data = await apiFetch('/api/me', {
+        method: 'PATCH',
+        token,
+        body: { username, avatarUrl },
+      });
+      onUserChange(data.user);
+      setNotice('用户资料已保存。');
+    } catch (error) {
+      setNotice(error.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function requestEmailChange() {
+    setBusy(true);
+    setNotice('');
+    try {
+      await apiFetch('/api/auth/request-email-change', {
+        method: 'POST',
+        token,
+        body: { email: newEmail },
+      });
+      setNotice('新邮箱验证码已发送。');
+    } catch (error) {
+      setNotice(error.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function confirmEmailChange() {
+    setBusy(true);
+    setNotice('');
+    try {
+      const data = await apiFetch('/api/auth/confirm-email-change', {
+        method: 'POST',
+        token,
+        body: { email: newEmail, code: emailCode },
+      });
+      onUserChange(data.user);
+      setNewEmail('');
+      setEmailCode('');
+      setNotice('邮箱已更换。');
+    } catch (error) {
+      setNotice(error.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Modal title="用户设置" onClose={onClose}>
+      <form className="modal-form" onSubmit={saveProfile}>
+        <label>
+          用户名
+          <input value={username} onChange={(event) => setUsername(event.target.value)} />
+        </label>
+        <label>
+          头像图片链接
+          <input
+            value={avatarUrl}
+            onChange={(event) => setAvatarUrl(event.target.value)}
+            placeholder="https://..."
+          />
+        </label>
+        <button type="submit" disabled={busy}>
+          保存资料
+        </button>
+      </form>
+
+      <div className="settings-divider" />
+
+      <div className="modal-form">
+        <label>
+          更换邮箱
+          <input
+            value={newEmail}
+            onChange={(event) => setNewEmail(event.target.value)}
+            placeholder="new@example.com"
+            type="email"
+          />
+        </label>
+        <div className="inline-actions">
+          <button type="button" onClick={requestEmailChange} disabled={busy || !newEmail.trim()}>
+            发送验证码
+          </button>
+        </div>
+        <label>
+          新邮箱验证码
+          <input
+            value={emailCode}
+            onChange={(event) => setEmailCode(event.target.value)}
+            inputMode="numeric"
+          />
+        </label>
+        <button type="button" onClick={confirmEmailChange} disabled={busy || !emailCode.trim()}>
+          确认更换邮箱
+        </button>
+      </div>
+
+      {notice && <p className="notice">{notice}</p>}
+    </Modal>
+  );
+}
+
+function Modal({ title, children, onClose }) {
+  return (
+    <div className="modal-backdrop">
+      <section className="modal-card">
+        <header className="modal-header">
+          <h2>{title}</h2>
+          <button type="button" onClick={onClose} aria-label="关闭">
+            ×
+          </button>
+        </header>
+        {children}
+      </section>
     </div>
   );
 }
@@ -374,7 +656,7 @@ function AdminPage() {
               <input
                 value={form.title}
                 onChange={(event) => setForm({ ...form, title: event.target.value })}
-                placeholder="例如：中国2型糖尿病防治指南"
+                placeholder="例如：中国 2 型糖尿病防治指南"
                 required
               />
             </label>
@@ -474,12 +756,12 @@ function AdminPage() {
   );
 }
 
-function MessageBubble({ message }) {
+function MessageBubble({ message, user }) {
   const isUser = message.role === 'user';
 
   return (
     <article className={isUser ? 'chat-message user' : 'chat-message assistant'}>
-      <div className="message-avatar">{isUser ? '你' : '麦'}</div>
+      {!isUser && <div className="message-avatar">麦</div>}
       <div className="message-content">
         {!isUser && <span className="source-badge">{message.sourceLabel}</span>}
         <p>{message.answer}</p>
@@ -499,8 +781,16 @@ function MessageBubble({ message }) {
           </>
         )}
       </div>
+      {isUser && <Avatar user={user} />}
     </article>
   );
+}
+
+function Avatar({ user }) {
+  if (user?.avatarUrl) {
+    return <img className="avatar image-avatar" src={user.avatarUrl} alt={user.username || '头像'} />;
+  }
+  return <div className="avatar">{(user?.username || '你').slice(0, 1)}</div>;
 }
 
 function Icon({ name }) {
@@ -516,6 +806,36 @@ function Icon({ name }) {
       <path d={icons[name]} />
     </svg>
   );
+}
+
+async function apiFetch(path, options = {}) {
+  const headers = { ...(options.headers || {}) };
+  if (options.body && !(options.body instanceof FormData)) {
+    headers['Content-Type'] = 'application/json';
+  }
+  if (options.token) {
+    headers.Authorization = `Bearer ${options.token}`;
+  }
+
+  const response = await fetch(`${API_BASE}${path}`, {
+    method: options.method || 'GET',
+    headers,
+    body:
+      options.body && !(options.body instanceof FormData)
+        ? JSON.stringify(options.body)
+        : options.body,
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(data.error || '请求失败');
+  return data;
+}
+
+async function saveCloudConversations(conversations, token) {
+  await apiFetch('/api/conversations', {
+    method: 'PUT',
+    token,
+    body: { conversations },
+  });
 }
 
 function loadConversations() {
@@ -537,6 +857,28 @@ function createConversation(firstQuestion = '') {
     updatedAt: now,
     messages: [],
   };
+}
+
+function upsertConversation(conversations, nextConversation) {
+  const exists = conversations.some((conversation) => conversation.id === nextConversation.id);
+  const next = exists
+    ? conversations.map((conversation) =>
+        conversation.id === nextConversation.id ? nextConversation : conversation,
+      )
+    : [nextConversation, ...conversations];
+  return next.sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt));
+}
+
+function appendMessage(conversations, conversationId, message) {
+  return conversations.map((conversation) =>
+    conversation.id === conversationId
+      ? {
+          ...conversation,
+          updatedAt: new Date().toISOString(),
+          messages: [...conversation.messages, message],
+        }
+      : conversation,
+  );
 }
 
 function buildTitle(question) {
