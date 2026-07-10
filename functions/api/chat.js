@@ -4,6 +4,7 @@ import {
   getKnowledgeItems,
   json,
   searchKnowledge,
+  summarizeKnowledgeAnswer,
 } from './_lib.js';
 
 export async function onRequestPost({ request, env }) {
@@ -20,8 +21,15 @@ export async function onRequestPost({ request, env }) {
     const matches = searchKnowledge(items, question, Number(env.KNOWLEDGE_MIN_SCORE || 3));
 
     if (matches.length > 0) {
+      let answer;
+      try {
+        answer = await summarizeKnowledgeAnswer(env, { question, matches });
+      } catch {
+        answer = buildKnowledgeAnswer(question, matches);
+      }
+
       return json({
-        answer: buildKnowledgeAnswer(question, matches),
+        answer,
         sourceType: 'knowledge',
         sourceLabel: '来自麦芽知识库',
         provider: 'maiya-knowledge',
@@ -29,6 +37,8 @@ export async function onRequestPost({ request, env }) {
           id: match.id,
           title: match.title,
           score: match.score,
+          relevanceLabel: match.relevanceLabel,
+          scoreDescription: match.scoreDescription,
           tags: match.tags,
           sourceName: match.sourceName,
           excerpt: match.excerpt,

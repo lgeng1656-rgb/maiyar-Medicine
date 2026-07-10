@@ -11,7 +11,7 @@ import {
   getKnowledgeStats,
   searchKnowledge,
 } from './knowledgeStore.js';
-import { callExternalModel, getProviderStatus } from './modelProviders.js';
+import { callExternalModel, getProviderStatus, summarizeKnowledgeAnswer } from './modelProviders.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -90,8 +90,16 @@ app.post('/api/chat', async (req, res, next) => {
 
     const matches = await searchKnowledge(question);
     if (matches.length > 0) {
+      const fallbackAnswer = buildKnowledgeAnswer(question, matches);
+      let answer = fallbackAnswer;
+      try {
+        answer = await summarizeKnowledgeAnswer({ question, matches, fallbackAnswer });
+      } catch {
+        answer = fallbackAnswer;
+      }
+
       res.json({
-        answer: buildKnowledgeAnswer(question, matches),
+        answer,
         sourceType: 'knowledge',
         sourceLabel: '来自麦芽知识库',
         provider: 'maiya-knowledge',
@@ -99,6 +107,8 @@ app.post('/api/chat', async (req, res, next) => {
           id: match.id,
           title: match.title,
           score: match.score,
+          relevanceLabel: match.relevanceLabel,
+          scoreDescription: match.scoreDescription,
           tags: match.tags,
           sourceName: match.sourceName,
           excerpt: match.excerpt,

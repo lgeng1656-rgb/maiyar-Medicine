@@ -93,12 +93,24 @@ export async function searchKnowledge(question) {
       return {
         ...item,
         score,
+        relevanceLabel: getRelevanceLabel(score),
+        scoreDescription: getScoreDescription(score),
         excerpt: buildExcerpt(item, query, terms),
       };
     })
     .filter((item) => item.score >= minScore)
     .sort((a, b) => b.score - a.score)
     .slice(0, 5);
+}
+
+export function getRelevanceLabel(score) {
+  if (score >= 20) return '高';
+  if (score >= 10) return '中';
+  return '低';
+}
+
+export function getScoreDescription(score) {
+  return `匹配分 ${score} 只表示问题和资料在标题、标签、正文里的关键词重合程度，不代表医学可信度或百分制得分。`;
 }
 
 async function readItems() {

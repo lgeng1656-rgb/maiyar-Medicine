@@ -40,12 +40,78 @@ export function searchKnowledge(items, question, minScore = 3) {
       return {
         ...item,
         score,
+        relevanceLabel: getRelevanceLabel(score),
+        scoreDescription: getScoreDescription(score),
         excerpt: buildExcerpt(item, query, terms),
       };
     })
     .filter((item) => item.score >= minScore)
     .sort((a, b) => b.score - a.score)
     .slice(0, 5);
+}
+
+export async function summarizeKnowledgeAnswer(env, { question, matches }) {
+  const selectedProvider = selectProvider(env, 'api');
+  if (!selectedProvider) {
+    return buildKnowledgeAnswer(question, matches);
+  }
+
+  const context = matches
+    .slice(0, 5)
+    .map((match, index) => {
+      return [
+        `资料 ${index + 1}`,
+        `标题：${match.title}`,
+        `相关度：${match.relevanceLabel}（匹配分 ${match.score}）`,
+        `内容：${match.excerpt}`,
+      ].join('\n');
+    })
+    .join('\n\n');
+
+  const baseUrl = env.AI_BASE_URL || 'https://api.siliconflow.cn/v1';
+  const model = env.AI_MODEL || 'deepseek-ai/DeepSeek-V4-Flash';
+  const endpoint = `${baseUrl.replace(/\/$/, '')}/chat/completions`;
+
+  const response = await fetch(endpoint, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${env.AI_API_KEY}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      model,
+      messages: [
+        {
+          role: 'system',
+          content:
+            '你是麦芽医疗 AI 的知识库总结助手。必须只根据用户提供的“麦芽知识库资料”回答，不要编造资料外内容。回答用中文，先给直接结论，再用要点总结。若资料不足，要明确说资料不足。最后保留医疗学习免责声明。',
+        },
+        {
+          role: 'user',
+          content: [
+            `用户问题：${question}`,
+            '',
+            '麦芽知识库资料：',
+            context,
+            '',
+            '请基于以上资料做总结回答，不要只复制原文。',
+          ].join('\n'),
+        },
+      ],
+      stream: false,
+      temperature: 0.2,
+    }),
+  });
+
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(data?.error?.message || data?.message || '知识库总结失败');
+  }
+
+  return (
+    data?.choices?.[0]?.message?.content ||
+    buildKnowledgeAnswer(question, matches)
+  );
 }
 
 export async function callExternalModel(env, { question, provider }) {
@@ -112,6 +178,16 @@ export function buildKnowledgeAnswer(question, matches) {
     '',
     '医疗提醒：以上内容只用于医学知识学习和辅助参考，不能替代医生面诊、诊断或治疗方案。',
   ].join('\n');
+}
+
+export function getRelevanceLabel(score) {
+  if (score >= 20) return '高';
+  if (score >= 10) return '中';
+  return '低';
+}
+
+export function getScoreDescription(score) {
+  return `匹配分 ${score} 只表示问题和资料在标题、标签、正文里的关键词重合程度，不代表医学可信度或百分制得分。`;
 }
 
 function selectProvider(env, provider) {

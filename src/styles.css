@@ -404,6 +404,13 @@ svg {
   font-weight: 700;
 }
 
+.score-note {
+  margin: 8px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
 .loading-line {
   width: min(820px, 100%);
   margin: 0 auto;

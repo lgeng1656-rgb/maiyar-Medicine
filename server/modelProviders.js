@@ -61,6 +61,65 @@ export async function callExternalModel({ question, provider }) {
   });
 }
 
+export async function summarizeKnowledgeAnswer({ question, matches, fallbackAnswer }) {
+  const selectedProvider = selectProvider('api');
+  if (!selectedProvider) {
+    return fallbackAnswer;
+  }
+
+  const context = matches
+    .slice(0, 5)
+    .map((match, index) => {
+      return [
+        `资料 ${index + 1}`,
+        `标题：${match.title}`,
+        `相关度：${match.relevanceLabel}（匹配分 ${match.score}）`,
+        `内容：${match.excerpt}`,
+      ].join('\n');
+    })
+    .join('\n\n');
+
+  const endpoint = `${(process.env.AI_BASE_URL || 'https://api.siliconflow.cn/v1').replace(/\/$/, '')}/chat/completions`;
+
+  const response = await fetch(endpoint, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${process.env.AI_API_KEY}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      model: process.env.AI_MODEL || 'deepseek-ai/DeepSeek-V4-Flash',
+      messages: [
+        {
+          role: 'system',
+          content:
+            '你是麦芽医疗 AI 的知识库总结助手。必须只根据用户提供的“麦芽知识库资料”回答，不要编造资料外内容。回答用中文，先给直接结论，再用要点总结。若资料不足，要明确说资料不足。最后保留医疗学习免责声明。',
+        },
+        {
+          role: 'user',
+          content: [
+            `用户问题：${question}`,
+            '',
+            '麦芽知识库资料：',
+            context,
+            '',
+            '请基于以上资料做总结回答，不要只复制原文。',
+          ].join('\n'),
+        },
+      ],
+      stream: false,
+      temperature: 0.2,
+    }),
+  });
+
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(data?.error?.message || data?.message || '知识库总结失败');
+  }
+
+  return data?.choices?.[0]?.message?.content || fallbackAnswer;
+}
+
 function selectProvider(provider) {
   const status = getProviderStatus();
 

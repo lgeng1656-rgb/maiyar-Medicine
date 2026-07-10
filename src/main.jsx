@@ -484,11 +484,19 @@ function MessageBubble({ message }) {
         {!isUser && <span className="source-badge">{message.sourceLabel}</span>}
         <p>{message.answer}</p>
         {!isUser && message.citations?.length > 0 && (
-          <div className="citations">
-            {message.citations.map((citation) => (
-              <span key={citation.id}>《{citation.title}》 分数 {citation.score}</span>
-            ))}
-          </div>
+          <>
+            <div className="citations">
+              {message.citations.map((citation) => (
+                <span key={citation.id} title={citation.scoreDescription}>
+                  《{citation.title}》 相关度 {citation.relevanceLabel || '中'} · 匹配分{' '}
+                  {citation.score}
+                </span>
+              ))}
+            </div>
+            <p className="score-note">
+              匹配分只表示问题和资料的关键词重合程度，不代表医学可信度或百分制得分。
+            </p>
+          </>
         )}
       </div>
     </article>
