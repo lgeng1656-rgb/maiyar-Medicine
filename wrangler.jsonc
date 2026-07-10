@@ -8,7 +8,7 @@
     "AI_MODEL": "deepseek-ai/DeepSeek-V4-Flash",
     "AI_PROVIDER_LABEL": "硅基流动",
     "QWEN_VL_BASE_URL": "https://api.siliconflow.cn/v1",
-    "QWEN_VL_MODEL": "Qwen/Qwen3.6-35B-A3B"
+    "QWEN_VL_MODEL": "Qwen/Qwen3-VL-32B-Instruct"
   },
   "kv_namespaces": [
     {

@@ -51,7 +51,7 @@ copy .env.example .env
 当前视觉模型配置：
 
 - `QWEN_VL_BASE_URL=https://api.siliconflow.cn/v1`
-- `QWEN_VL_MODEL=Qwen/Qwen3.6-35B-A3B`
+- `QWEN_VL_MODEL=Qwen/Qwen3-VL-32B-Instruct`
 
 当前实现不会把 20MB 视频整段传给后端，而是在浏览器本地抽取最多 6 张关键帧，再把压缩后的图片帧发送给后端调用千问视觉模型。这样速度更快，也避免 Cloudflare Functions 处理大文件上传。
 
