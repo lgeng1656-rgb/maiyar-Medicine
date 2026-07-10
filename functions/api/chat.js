@@ -18,7 +18,7 @@ export async function onRequestPost({ request, env }) {
     }
 
     const items = await getKnowledgeItems(env);
-    const matches = searchKnowledge(items, question, Number(env.KNOWLEDGE_MIN_SCORE || 3));
+    const matches = searchKnowledge(items, question, Number(env.KNOWLEDGE_MIN_SCORE || 10));
 
     if (matches.length > 0) {
       let answer;

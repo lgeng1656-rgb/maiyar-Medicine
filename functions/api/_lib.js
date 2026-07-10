@@ -27,7 +27,7 @@ export function getKnowledgeStats(items) {
   };
 }
 
-export function searchKnowledge(items, question, minScore = 3) {
+export function searchKnowledge(items, question, minScore = 10) {
   const query = normalize(question);
   const terms = buildTerms(query);
 

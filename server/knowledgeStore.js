@@ -82,7 +82,7 @@ export async function searchKnowledge(question) {
   const items = await readItems();
   const query = normalize(question);
   const terms = buildTerms(query);
-  const minScore = Number(process.env.KNOWLEDGE_MIN_SCORE || 3);
+  const minScore = Number(process.env.KNOWLEDGE_MIN_SCORE || 10);
 
   return items
     .map((item) => {
