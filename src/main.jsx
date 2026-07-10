@@ -146,7 +146,11 @@ function ChatPage() {
     try {
       const data = await apiFetch('/api/chat', {
         method: 'POST',
-        body: { question: trimmed, provider },
+        body: {
+          question: trimmed,
+          provider,
+          messages: buildRecentMessages(withUserMessage, currentConversation.id),
+        },
       });
       const assistantMessage = {
         id: crypto.randomUUID(),
@@ -583,6 +587,8 @@ function AdminPage() {
   });
   const [file, setFile] = useState(null);
   const [saving, setSaving] = useState(false);
+  const [analyzingMedia, setAnalyzingMedia] = useState(false);
+  const [mediaAnalysis, setMediaAnalysis] = useState('');
   const [notice, setNotice] = useState('');
 
   useEffect(() => {
@@ -601,9 +607,26 @@ function AdminPage() {
     setNotice('');
 
     try {
+      let nextMediaAnalysis = mediaAnalysis;
+      if (file && isVisualMedia(file) && !nextMediaAnalysis) {
+        setAnalyzingMedia(true);
+        setNotice('正在用千问读取图片/视频帧...');
+        nextMediaAnalysis = await analyzeMediaFile(file);
+        setMediaAnalysis(nextMediaAnalysis);
+      }
+
       const body = new FormData();
       Object.entries(form).forEach(([key, value]) => body.append(key, value));
-      if (file) body.append('file', file);
+      if (nextMediaAnalysis) body.append('mediaAnalysis', nextMediaAnalysis);
+      if (file) {
+        body.append('fileName', file.name);
+        body.append('fileType', file.type);
+        body.append('fileSize', String(file.size));
+      }
+
+      if (file && !isVisualMedia(file)) {
+        body.append('file', file);
+      }
 
       const response = await fetch(`${API_BASE}/api/knowledge`, {
         method: 'POST',
@@ -614,11 +637,13 @@ function AdminPage() {
 
       setForm({ title: '', tags: '', sourceName: '麦芽知识库', content: '' });
       setFile(null);
+      setMediaAnalysis('');
       setNotice('上传并索引完成');
       await loadKnowledge();
     } catch (error) {
       setNotice(error.message);
     } finally {
+      setAnalyzingMedia(false);
       setSaving(false);
     }
   }
@@ -689,13 +714,28 @@ function AdminPage() {
             </label>
 
             <label className="dropzone">
-              <input type="file" onChange={(event) => setFile(event.target.files?.[0] || null)} />
+              <input
+                type="file"
+                onChange={(event) => {
+                  setFile(event.target.files?.[0] || null);
+                  setMediaAnalysis('');
+                }}
+              />
               <strong>{file ? file.name : '选择文件或拖拽上传'}</strong>
-              <span>支持 PDF、DOCX、TXT、MD、JPG、PNG、MP4 等，单文件最大 200MB。</span>
+              <span>
+                图片会调用千问读取画面文字；视频会抽取关键帧分析，不再整段上传，适合 20MB 以上视频。
+              </span>
             </label>
 
+            {mediaAnalysis && (
+              <div className="analysis-preview">
+                <strong>图片/视频 AI 解析</strong>
+                <p>{mediaAnalysis}</p>
+              </div>
+            )}
+
             <button type="submit" disabled={saving}>
-              {saving ? '上传中...' : '上传并解析'}
+              {analyzingMedia ? '正在解析媒体...' : saving ? '上传中...' : '上传并解析'}
             </button>
             {notice && <p className="notice">{notice}</p>}
           </form>
@@ -828,6 +868,104 @@ async function apiFetch(path, options = {}) {
   const data = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(data.error || '请求失败');
   return data;
+}
+
+function buildRecentMessages(conversations, conversationId) {
+  const conversation = conversations.find((item) => item.id === conversationId);
+  return (conversation?.messages || []).slice(-8).map((message) => ({
+    role: message.role,
+    content: message.answer,
+  }));
+}
+
+function isVisualMedia(file) {
+  return file?.type?.startsWith('image/') || file?.type?.startsWith('video/');
+}
+
+async function analyzeMediaFile(file) {
+  const frames = file.type.startsWith('video/')
+    ? await captureVideoFrames(file)
+    : [await captureImageFrame(file)];
+
+  const data = await apiFetch('/api/media/analyze', {
+    method: 'POST',
+    body: {
+      mediaType: file.type.startsWith('video/') ? 'video' : 'image',
+      frames,
+    },
+  });
+
+  return data.analysis;
+}
+
+function captureImageFrame(file) {
+  return new Promise((resolve, reject) => {
+    const image = new Image();
+    const objectUrl = URL.createObjectURL(file);
+    image.onload = () => {
+      URL.revokeObjectURL(objectUrl);
+      resolve(drawToDataUrl(image));
+    };
+    image.onerror = () => {
+      URL.revokeObjectURL(objectUrl);
+      reject(new Error('图片读取失败'));
+    };
+    image.src = objectUrl;
+  });
+}
+
+function captureVideoFrames(file) {
+  return new Promise((resolve, reject) => {
+    const video = document.createElement('video');
+    const objectUrl = URL.createObjectURL(file);
+    const frames = [];
+    let targets = [];
+    let index = 0;
+
+    video.preload = 'metadata';
+    video.muted = true;
+    video.playsInline = true;
+
+    video.onloadedmetadata = () => {
+      const duration = Number.isFinite(video.duration) && video.duration > 0 ? video.duration : 1;
+      const count = Math.min(6, Math.max(3, Math.floor(duration / 20) + 1));
+      targets = Array.from({ length: count }, (_, targetIndex) => {
+        return Math.min(duration - 0.2, Math.max(0.2, (duration * (targetIndex + 1)) / (count + 1)));
+      });
+      video.currentTime = targets[index];
+    };
+
+    video.onseeked = () => {
+      frames.push(drawToDataUrl(video));
+      index += 1;
+      if (index >= targets.length) {
+        URL.revokeObjectURL(objectUrl);
+        resolve(frames);
+      } else {
+        video.currentTime = targets[index];
+      }
+    };
+
+    video.onerror = () => {
+      URL.revokeObjectURL(objectUrl);
+      reject(new Error('视频帧读取失败'));
+    };
+
+    video.src = objectUrl;
+  });
+}
+
+function drawToDataUrl(source) {
+  const maxWidth = 960;
+  const sourceWidth = source.videoWidth || source.naturalWidth || source.width;
+  const sourceHeight = source.videoHeight || source.naturalHeight || source.height;
+  const scale = Math.min(1, maxWidth / sourceWidth);
+  const canvas = document.createElement('canvas');
+  canvas.width = Math.round(sourceWidth * scale);
+  canvas.height = Math.round(sourceHeight * scale);
+  const context = canvas.getContext('2d');
+  context.drawImage(source, 0, 0, canvas.width, canvas.height);
+  return canvas.toDataURL('image/jpeg', 0.72);
 }
 
 async function saveCloudConversations(conversations, token) {

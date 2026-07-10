@@ -15,10 +15,11 @@ export async function onRequestPost({ request, env }) {
     }
 
     const file = form.get('file');
+    const mediaAnalysis = String(form.get('mediaAnalysis') || '').trim();
     let fileText = '';
-    let fileMeta = null;
+    let fileMeta = buildFileMetaFromForm(form);
 
-    if (file && typeof file === 'object' && 'name' in file) {
+    if (file && typeof file === 'object' && 'name' in file && file.size > 0) {
       fileMeta = {
         originalName: file.name,
         mimeType: file.type,
@@ -30,7 +31,11 @@ export async function onRequestPost({ request, env }) {
       }
     }
 
-    const content = [String(form.get('content') || '').trim(), fileText]
+    const content = [
+      String(form.get('content') || '').trim(),
+      mediaAnalysis ? `图片/视频 AI 解析：\n${mediaAnalysis}` : '',
+      fileText,
+    ]
       .filter(Boolean)
       .join('\n\n');
 
@@ -57,9 +62,21 @@ export async function onRequestPost({ request, env }) {
 
 function parseTags(tags) {
   return String(tags || '')
-    .split(/[，,\n]/)
+    .split(/[,，\n]/)
     .map((tag) => tag.trim())
     .filter(Boolean);
+}
+
+function buildFileMetaFromForm(form) {
+  const originalName = String(form.get('fileName') || '').trim();
+  if (!originalName) return null;
+
+  return {
+    originalName,
+    mimeType: String(form.get('fileType') || '').trim(),
+    size: Number(form.get('fileSize') || 0),
+    stored: false,
+  };
 }
 
 function isTextFile(name, type) {

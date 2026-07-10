@@ -1,4 +1,5 @@
 import {
+  buildConversationContext,
   buildKnowledgeAnswer,
   callExternalModel,
   getKnowledgeItems,
@@ -12,20 +13,27 @@ export async function onRequestPost({ request, env }) {
     const body = await request.json();
     const question = String(body.question || '').trim();
     const provider = body.provider || 'auto';
+    const messages = Array.isArray(body.messages) ? body.messages : [];
 
     if (!question) {
       return json({ error: '问题不能为空' }, { status: 400 });
     }
 
+    const conversationContext = buildConversationContext(messages);
+    const searchQuestion = [conversationContext, question].filter(Boolean).join('\n');
     const items = await getKnowledgeItems(env);
     const configuredMinScore = Number(env.KNOWLEDGE_MIN_SCORE || 10);
     const minScore = Number.isFinite(configuredMinScore) ? Math.max(configuredMinScore, 10) : 10;
-    const matches = searchKnowledge(items, question, minScore);
+    const matches = searchKnowledge(items, searchQuestion, minScore);
 
     if (matches.length > 0) {
       let answer;
       try {
-        answer = await summarizeKnowledgeAnswer(env, { question, matches });
+        answer = await summarizeKnowledgeAnswer(env, {
+          question,
+          matches,
+          conversationContext,
+        });
       } catch {
         answer = buildKnowledgeAnswer(question, matches);
       }
@@ -48,7 +56,7 @@ export async function onRequestPost({ request, env }) {
       });
     }
 
-    const modelResult = await callExternalModel(env, { question, provider });
+    const modelResult = await callExternalModel(env, { question, provider, messages });
     return json({
       answer: modelResult.answer,
       sourceType: 'external-ai',
@@ -57,6 +65,6 @@ export async function onRequestPost({ request, env }) {
       citations: [],
     });
   } catch (error) {
-    return json({ error: error.message || '服务器内部错误' }, { status: 500 });
+    return json({ error: error.message || '服务器内部错误' }, { status: error.status || 500 });
   }
 }

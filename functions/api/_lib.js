@@ -60,7 +60,7 @@ export function searchKnowledge(items, question, minScore = 10) {
     .slice(0, 5);
 }
 
-export async function summarizeKnowledgeAnswer(env, { question, matches }) {
+export async function summarizeKnowledgeAnswer(env, { question, matches, conversationContext = '' }) {
   const selectedProvider = selectProvider(env, 'api');
   if (!selectedProvider) {
     return buildKnowledgeAnswer(question, matches);
@@ -99,6 +99,8 @@ export async function summarizeKnowledgeAnswer(env, { question, matches }) {
         {
           role: 'user',
           content: [
+            conversationContext ? `当前对话上下文：\n${conversationContext}` : '',
+            '',
             `用户问题：${question}`,
             '',
             '麦芽知识库资料：',
@@ -121,7 +123,7 @@ export async function summarizeKnowledgeAnswer(env, { question, matches }) {
   return data?.choices?.[0]?.message?.content || buildKnowledgeAnswer(question, matches);
 }
 
-export async function callExternalModel(env, { question, provider }) {
+export async function callExternalModel(env, { question, provider, messages = [] }) {
   const selectedProvider = selectProvider(env, provider);
 
   if (!selectedProvider) {
@@ -137,6 +139,8 @@ export async function callExternalModel(env, { question, provider }) {
   const label = env.AI_PROVIDER_LABEL || '硅基流动';
   const endpoint = `${baseUrl.replace(/\/$/, '')}/chat/completions`;
 
+  const conversationMessages = buildModelMessages(messages, question);
+
   const response = await fetch(endpoint, {
     method: 'POST',
     headers: {
@@ -151,7 +155,7 @@ export async function callExternalModel(env, { question, provider }) {
           content:
             '你是一个严谨的医疗知识助手。回答必须使用中文，不能替代医生诊断。遇到急症、用药剂量、诊断结论时，要提醒用户咨询正规医疗机构。',
         },
-        { role: 'user', content: question },
+        ...conversationMessages,
       ],
       stream: false,
       temperature: 0.3,
@@ -167,6 +171,67 @@ export async function callExternalModel(env, { question, provider }) {
     provider: selectedProvider,
     label,
     answer: data?.choices?.[0]?.message?.content || '模型已返回结果，但响应里没有可显示的文本内容。',
+  };
+}
+
+export async function callVisualModel(env, { frames, prompt, mediaType }) {
+  if (!env.DASHSCOPE_API_KEY || !env.QWEN_VL_BASE_URL) {
+    const error = new Error('还没有配置千问视觉模型。请配置 DASHSCOPE_API_KEY、QWEN_VL_BASE_URL 和 QWEN_VL_MODEL。');
+    error.status = 503;
+    throw error;
+  }
+
+  const normalizedFrames = Array.isArray(frames) ? frames.slice(0, 8) : [];
+  if (normalizedFrames.length === 0) {
+    const error = new Error('没有可分析的图片或视频帧');
+    error.status = 400;
+    throw error;
+  }
+
+  const endpoint = `${env.QWEN_VL_BASE_URL.replace(/\/$/, '')}/chat/completions`;
+  const model = env.QWEN_VL_MODEL || 'qwen3-vl-plus';
+  const content = [
+    {
+      type: 'text',
+      text:
+        prompt ||
+        [
+          `请分析这些${mediaType === 'video' ? '视频关键帧' : '图片'}中的病例、手术、器械、文字信息。`,
+          '请尽量提取画面里的中文文字、患者基本信息、诊断、主诉、手术名称、医生姓名、操作步骤、器械名称。',
+          '如果无法确定，请明确写“无法确定”，不要编造。',
+          '输出为中文结构化摘要，供知识库检索使用。',
+        ].join('\n'),
+    },
+    ...normalizedFrames.map((url) => ({
+      type: 'image_url',
+      image_url: { url },
+    })),
+  ];
+
+  const response = await fetch(endpoint, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${env.DASHSCOPE_API_KEY}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      model,
+      messages: [{ role: 'user', content }],
+      stream: false,
+      temperature: 0.1,
+    }),
+  });
+
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    const error = new Error(data?.error?.message || data?.message || '千问视觉模型分析失败');
+    error.status = 502;
+    throw error;
+  }
+
+  return {
+    model,
+    analysis: data?.choices?.[0]?.message?.content || '',
   };
 }
 
@@ -336,6 +401,13 @@ export async function saveUserConversations(env, userId, conversations) {
   await env.MAIYA_KV.put(conversationsKey(userId), JSON.stringify(sanitizeConversations(conversations)));
 }
 
+export function buildConversationContext(messages = []) {
+  return sanitizeMessageHistory(messages)
+    .slice(-8)
+    .map((message) => `${message.role === 'user' ? '用户' : 'AI'}：${message.content}`)
+    .join('\n');
+}
+
 async function sendVerificationEmail(env, email, code, purpose) {
   if (!env.RESEND_API_KEY || !env.EMAIL_FROM) {
     const error = new Error('还没有配置邮件服务。请在 Cloudflare 环境变量里配置 RESEND_API_KEY 和 EMAIL_FROM。');
@@ -385,6 +457,27 @@ function sanitizeConversations(value) {
         }))
       : [],
   }));
+}
+
+function buildModelMessages(messages, question) {
+  const history = sanitizeMessageHistory(messages).slice(-8);
+  const last = history[history.length - 1];
+  const shouldAppendQuestion = !last || last.role !== 'user' || last.content !== question;
+  const finalHistory = shouldAppendQuestion ? [...history, { role: 'user', content: question }] : history;
+
+  return finalHistory.map((message) => ({
+    role: message.role,
+    content: message.content,
+  }));
+}
+
+function sanitizeMessageHistory(messages) {
+  return (Array.isArray(messages) ? messages : [])
+    .map((message) => ({
+      role: message.role === 'assistant' ? 'assistant' : 'user',
+      content: String(message.content || message.answer || '').trim().slice(0, 4000),
+    }))
+    .filter((message) => message.content);
 }
 
 function selectProvider(env, provider) {

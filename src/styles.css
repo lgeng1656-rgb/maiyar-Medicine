@@ -710,6 +710,30 @@ svg {
   display: none;
 }
 
+.analysis-preview {
+  display: grid;
+  gap: 8px;
+  border: 1px solid #bfdbfe;
+  border-radius: 10px;
+  padding: 12px;
+  background: #eff6ff;
+}
+
+.analysis-preview strong {
+  color: #1d4ed8;
+  font-size: 13px;
+}
+
+.analysis-preview p {
+  max-height: 180px;
+  overflow: auto;
+  margin: 0;
+  color: var(--text);
+  font-size: 13px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+}
+
 .upload-panel button {
   border: 0;
   border-radius: 10px;
