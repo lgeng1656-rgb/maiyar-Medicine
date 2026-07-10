@@ -1,0 +1,18 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "maiyar-medicine",
+  "compatibility_date": "2026-07-10",
+  "pages_build_output_dir": "dist",
+  "vars": {
+    "AI_BASE_URL": "https://api.deepseek.com",
+    "AI_MODEL": "deepseek-chat",
+    "AI_PROVIDER_LABEL": "API 模型",
+    "KNOWLEDGE_MIN_SCORE": "3"
+  },
+  "kv_namespaces": [
+    {
+      "binding": "MAIYA_KV",
+      "id": "195808c30e2c453aaea2f61536839d30"
+    }
+  ]
+}
