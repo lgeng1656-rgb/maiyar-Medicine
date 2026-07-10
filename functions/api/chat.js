@@ -18,7 +18,9 @@ export async function onRequestPost({ request, env }) {
     }
 
     const items = await getKnowledgeItems(env);
-    const matches = searchKnowledge(items, question, Number(env.KNOWLEDGE_MIN_SCORE || 10));
+    const configuredMinScore = Number(env.KNOWLEDGE_MIN_SCORE || 10);
+    const minScore = Number.isFinite(configuredMinScore) ? Math.max(configuredMinScore, 10) : 10;
+    const matches = searchKnowledge(items, question, minScore);
 
     if (matches.length > 0) {
       let answer;
