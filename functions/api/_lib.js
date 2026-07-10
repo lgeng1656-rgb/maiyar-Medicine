@@ -210,7 +210,7 @@ function buildTerms(query) {
     longerCjk.push(`${cjkChars[index]}${cjkChars[index + 1]}`);
   }
 
-  return [...new Set([...asciiWords, ...longerCjk, ...cjkChars])].filter(Boolean);
+  return [...new Set([...asciiWords, ...longerCjk])].filter(Boolean);
 }
 
 function scoreText(text, query, terms) {

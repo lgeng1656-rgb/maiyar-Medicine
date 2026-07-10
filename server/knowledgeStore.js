@@ -171,7 +171,7 @@ function buildTerms(query) {
     longerCjk.push(`${cjkChars[index]}${cjkChars[index + 1]}`);
   }
 
-  return [...new Set([...asciiWords, ...longerCjk, ...cjkChars])].filter(
+  return [...new Set([...asciiWords, ...longerCjk])].filter(
     (term) => term.length > 0,
   );
 }
