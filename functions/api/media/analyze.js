@@ -4,7 +4,7 @@ export async function onRequestPost({ request, env }) {
   try {
     const body = await request.json();
     const frames = Array.isArray(body.frames) ? body.frames : [];
-    const mediaType = body.mediaType === 'video' ? 'video' : 'image';
+    const mediaType = ['video', 'pdf'].includes(body.mediaType) ? body.mediaType : 'image';
     const result = await callVisualModel(env, {
       frames,
       mediaType,

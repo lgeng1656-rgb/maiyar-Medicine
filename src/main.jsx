@@ -1,6 +1,10 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
+import * as pdfjsLib from 'pdfjs-dist';
+import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.mjs?url';
 import './styles.css';
+
+pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || '';
 const STORAGE_KEY = 'maiya-medical-ai-conversations';
@@ -577,9 +581,9 @@ function AdminPage() {
 
     try {
       let nextMediaAnalysis = mediaAnalysis;
-      if (file && isVisualMedia(file) && !nextMediaAnalysis) {
+      if (file && canAnalyzeFile(file) && !nextMediaAnalysis) {
         setAnalyzingMedia(true);
-        setNotice('正在用千问读取图片/视频帧...');
+        setNotice(`正在用千问读取${getAnalysisFileLabel(file)}...`);
         nextMediaAnalysis = await analyzeMediaFile(file);
         setMediaAnalysis(nextMediaAnalysis);
       }
@@ -593,7 +597,7 @@ function AdminPage() {
         body.append('fileSize', String(file.size));
       }
 
-      if (file && !isVisualMedia(file)) {
+      if (file && !canAnalyzeFile(file)) {
         body.append('file', file);
       }
 
@@ -847,24 +851,62 @@ function buildRecentMessages(conversations, conversationId) {
   }));
 }
 
+function canAnalyzeFile(file) {
+  return isVisualMedia(file) || isPdfFile(file);
+}
+
 function isVisualMedia(file) {
   return file?.type?.startsWith('image/') || file?.type?.startsWith('video/');
 }
 
+function isPdfFile(file) {
+  return file?.type === 'application/pdf' || file?.name?.toLowerCase().endsWith('.pdf');
+}
+
+function getAnalysisFileLabel(file) {
+  if (isPdfFile(file)) return 'PDF页面';
+  if (file?.type?.startsWith('video/')) return '视频帧';
+  return '图片';
+}
+
 async function analyzeMediaFile(file) {
-  const frames = file.type.startsWith('video/')
-    ? await captureVideoFrames(file)
-    : [await captureImageFrame(file)];
+  const mediaType = isPdfFile(file) ? 'pdf' : file.type.startsWith('video/') ? 'video' : 'image';
+  const frames = isPdfFile(file)
+    ? await capturePdfPages(file)
+    : file.type.startsWith('video/')
+      ? await captureVideoFrames(file)
+      : [await captureImageFrame(file)];
 
   const data = await apiFetch('/api/media/analyze', {
     method: 'POST',
     body: {
-      mediaType: file.type.startsWith('video/') ? 'video' : 'image',
+      mediaType,
       frames,
     },
   });
 
   return data.analysis;
+}
+
+async function capturePdfPages(file) {
+  const pdf = await pdfjsLib.getDocument({ data: await file.arrayBuffer() }).promise;
+  const pageCount = Math.min(pdf.numPages, 6);
+  const frames = [];
+
+  for (let pageNumber = 1; pageNumber <= pageCount; pageNumber += 1) {
+    const page = await pdf.getPage(pageNumber);
+    const viewport = page.getViewport({ scale: 1.6 });
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.round(viewport.width);
+    canvas.height = Math.round(viewport.height);
+    const context = canvas.getContext('2d');
+
+    await page.render({ canvasContext: context, viewport }).promise;
+    frames.push(canvas.toDataURL('image/jpeg', 0.78));
+  }
+
+  if (frames.length === 0) throw new Error('PDF没有可读取的页面');
+  return frames;
 }
 
 function captureImageFrame(file) {

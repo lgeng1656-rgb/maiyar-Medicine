@@ -73,7 +73,7 @@ export async function summarizeKnowledgeAnswer(env, { question, matches, convers
         `资料 ${index + 1}`,
         `标题：${match.title}`,
         `相关度：${match.relevanceLabel}（匹配分 ${match.score}）`,
-        `内容：${match.excerpt}`,
+        `内容：${buildKnowledgeContextContent(match)}`,
       ].join('\n'),
     )
     .join('\n\n');
@@ -200,7 +200,7 @@ export async function callVisualModel(env, { frames, prompt, mediaType }) {
       text:
         prompt ||
         [
-          `请分析这些${mediaType === 'video' ? '视频关键帧' : '图片'}中的病例、手术、器械、文字信息。`,
+          `请分析这些${getMediaTypeLabel(mediaType)}中的病例、手术、器械、文字信息。`,
           '请尽量提取画面里的中文文字、患者基本信息、诊断、主诉、手术名称、医生姓名、操作步骤、器械名称。',
           '如果无法确定，请明确写“无法确定”，不要编造。',
           '输出为中文结构化摘要，供知识库检索使用。',
@@ -244,6 +244,12 @@ export async function callVisualModel(env, { frames, prompt, mediaType }) {
   };
 }
 
+function getMediaTypeLabel(mediaType) {
+  if (mediaType === 'video') return '视频关键帧';
+  if (mediaType === 'pdf') return 'PDF页面截图';
+  return '图片';
+}
+
 function selectVisualApiKey(env, baseUrl) {
   const normalizedBaseUrl = String(baseUrl || '').toLowerCase();
   if (normalizedBaseUrl.includes('siliconflow')) {
@@ -253,6 +259,12 @@ function selectVisualApiKey(env, baseUrl) {
     return env.DASHSCOPE_API_KEY || env.QWEN_VL_API_KEY || env.SILICONFLOW_API_KEY;
   }
   return env.QWEN_VL_API_KEY || env.SILICONFLOW_API_KEY || env.DASHSCOPE_API_KEY;
+}
+
+function buildKnowledgeContextContent(match) {
+  const content = String(match.content || match.excerpt || '').trim();
+  if (!content) return match.excerpt || '该资料没有可用正文。';
+  return content.length > 3000 ? `${content.slice(0, 3000)}\n...（内容过长，已截断）` : content;
 }
 
 export function buildKnowledgeAnswer(question, matches) {
