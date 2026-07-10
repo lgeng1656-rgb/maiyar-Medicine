@@ -540,7 +540,7 @@ function validatePasswordInput(email, password) {
 
 async function hashPassword(password) {
   const salt = crypto.getRandomValues(new Uint8Array(16));
-  const iterations = 120000;
+  const iterations = 100000;
   const hash = await pbkdf2(password, salt, iterations);
   return {
     algorithm: 'PBKDF2-SHA-256',
@@ -554,7 +554,7 @@ async function verifyPassword(password, record) {
   if (!record?.salt || !record?.hash) return false;
   const salt = base64ToBytes(record.salt);
   const expected = base64ToBytes(record.hash);
-  const actual = await pbkdf2(password, salt, Number(record.iterations || 120000));
+  const actual = await pbkdf2(password, salt, Number(record.iterations || 100000));
   return timingSafeEqual(actual, expected);
 }
 
