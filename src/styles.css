@@ -587,6 +587,12 @@ svg {
   cursor: pointer;
 }
 
+.modal-form .secondary-button {
+  border: 1px solid var(--border);
+  color: var(--text);
+  background: white;
+}
+
 .modal-form button:disabled,
 .inline-actions button:disabled {
   opacity: 0.5;

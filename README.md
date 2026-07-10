@@ -6,7 +6,7 @@
 - `/admin/`：知识库上传和管理页面。
 - 知识库优先：问题和麦芽知识库资料足够相关时，优先使用知识库并标注“来自麦芽知识库”。
 - 外部 AI 兜底：知识库没有足够相关资料时，自动调用已配置的外部 AI API。
-- 邮箱验证码登录：同一邮箱登录后，可跨设备读取历史对话，并支持用户名、头像和邮箱更换。
+- 邮箱密码登录：同一邮箱账号登录后，可跨设备读取历史对话，并支持用户名、头像和邮箱更换。
 - 图片/视频理解：图片会交给千问视觉模型提取文字和病例信息；视频会在浏览器抽取关键帧后交给千问分析。
 - 上下文追问：提问时会把当前对话最近几轮消息传给后端，支持“这场手术”“杨波参与的那场”等追问。
 
@@ -40,18 +40,16 @@ copy .env.example .env
 - `AI_MODEL`
 - `AI_PROVIDER_LABEL`
 
-邮箱验证码登录使用 Resend REST API：
-
-- `RESEND_API_KEY`
-- `EMAIL_FROM`
-
-注意：`RESEND_API_KEY` 是密钥，只能配置在 Cloudflare Pages 的环境变量或本地 `.env`，不能写进前端代码，也不能提交到 GitHub。
-
 图片和视频抽帧分析使用千问视觉模型：
 
 - `DASHSCOPE_API_KEY`
 - `QWEN_VL_BASE_URL`
 - `QWEN_VL_MODEL`
+
+当前视觉模型配置：
+
+- `QWEN_VL_BASE_URL=https://api.siliconflow.cn/v1`
+- `QWEN_VL_MODEL=Qwen/Qwen3.6-35B-A3B`
 
 当前实现不会把 20MB 视频整段传给后端，而是在浏览器本地抽取最多 6 张关键帧，再把压缩后的图片帧发送给后端调用千问视觉模型。这样速度更快，也避免 Cloudflare Functions 处理大文件上传。
 
@@ -85,6 +83,9 @@ copy .env.example .env
 - `POST /api/chat`
 - `POST /api/auth/request-code`
 - `POST /api/auth/verify`
+- `POST /api/auth/register`
+- `POST /api/auth/login`
+- `POST /api/auth/change-email`
 - `GET /api/me`
 - `PATCH /api/me`
 - `GET /api/conversations`
@@ -94,8 +95,6 @@ Cloudflare 需要配置：
 
 - KV binding：`MAIYA_KV`
 - AI 环境变量：`AI_API_KEY`、`AI_BASE_URL`、`AI_MODEL`、`AI_PROVIDER_LABEL`
-- 邮件环境变量：`RESEND_API_KEY`、`EMAIL_FROM`
 - 千问视觉环境变量：`DASHSCOPE_API_KEY`、`QWEN_VL_BASE_URL`、`QWEN_VL_MODEL`
 
-没有配置 `RESEND_API_KEY` 和 `EMAIL_FROM` 时，邮箱验证码登录接口会返回明确错误，无法真实发送验证码。
 没有配置千问视觉环境变量时，图片/视频解析接口会返回明确错误，普通文字知识库和聊天仍可使用。

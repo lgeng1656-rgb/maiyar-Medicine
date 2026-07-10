@@ -189,7 +189,7 @@ export async function callVisualModel(env, { frames, prompt, mediaType }) {
   }
 
   const endpoint = `${env.QWEN_VL_BASE_URL.replace(/\/$/, '')}/chat/completions`;
-  const model = env.QWEN_VL_MODEL || 'qwen3-vl-plus';
+  const model = env.QWEN_VL_MODEL || 'Qwen/Qwen3.6-35B-A3B';
   const content = [
     {
       type: 'text',
@@ -320,6 +320,51 @@ export async function findOrCreateUser(env, email) {
   };
   await saveUser(env, user);
   await env.MAIYA_KV.put(emailKey, user.id);
+  return user;
+}
+
+export async function registerUserWithPassword(env, { email, password }) {
+  const normalizedEmail = normalizeEmail(email);
+  validatePasswordInput(normalizedEmail, password);
+
+  const existingId = await env.MAIYA_KV.get(userEmailKey(normalizedEmail));
+  if (existingId) {
+    const error = new Error('这个邮箱已经注册，请直接登录');
+    error.status = 409;
+    throw error;
+  }
+
+  const now = new Date().toISOString();
+  const passwordRecord = await hashPassword(password);
+  const user = {
+    id: crypto.randomUUID(),
+    email: normalizedEmail,
+    username: normalizedEmail.split('@')[0] || '麦芽用户',
+    avatarUrl: '',
+    password: passwordRecord,
+    createdAt: now,
+    updatedAt: now,
+  };
+
+  await saveUser(env, user);
+  await env.MAIYA_KV.put(userEmailKey(normalizedEmail), user.id);
+  return user;
+}
+
+export async function loginUserWithPassword(env, { email, password }) {
+  const normalizedEmail = normalizeEmail(email);
+  validatePasswordInput(normalizedEmail, password);
+
+  const userId = await env.MAIYA_KV.get(userEmailKey(normalizedEmail));
+  const user = userId ? await getUser(env, userId) : null;
+  const valid = user?.password ? await verifyPassword(password, user.password) : false;
+
+  if (!user || !valid) {
+    const error = new Error('邮箱或密码不正确');
+    error.status = 401;
+    throw error;
+  }
+
   return user;
 }
 
@@ -478,6 +523,77 @@ function sanitizeMessageHistory(messages) {
       content: String(message.content || message.answer || '').trim().slice(0, 4000),
     }))
     .filter((message) => message.content);
+}
+
+function validatePasswordInput(email, password) {
+  if (!isValidEmail(email)) {
+    const error = new Error('请输入有效邮箱');
+    error.status = 400;
+    throw error;
+  }
+  if (String(password || '').length < 8) {
+    const error = new Error('密码至少需要 8 位');
+    error.status = 400;
+    throw error;
+  }
+}
+
+async function hashPassword(password) {
+  const salt = crypto.getRandomValues(new Uint8Array(16));
+  const iterations = 120000;
+  const hash = await pbkdf2(password, salt, iterations);
+  return {
+    algorithm: 'PBKDF2-SHA-256',
+    iterations,
+    salt: bytesToBase64(salt),
+    hash: bytesToBase64(hash),
+  };
+}
+
+async function verifyPassword(password, record) {
+  if (!record?.salt || !record?.hash) return false;
+  const salt = base64ToBytes(record.salt);
+  const expected = base64ToBytes(record.hash);
+  const actual = await pbkdf2(password, salt, Number(record.iterations || 120000));
+  return timingSafeEqual(actual, expected);
+}
+
+async function pbkdf2(password, salt, iterations) {
+  const keyMaterial = await crypto.subtle.importKey(
+    'raw',
+    new TextEncoder().encode(password),
+    'PBKDF2',
+    false,
+    ['deriveBits'],
+  );
+  const bits = await crypto.subtle.deriveBits(
+    {
+      name: 'PBKDF2',
+      hash: 'SHA-256',
+      salt,
+      iterations,
+    },
+    keyMaterial,
+    256,
+  );
+  return new Uint8Array(bits);
+}
+
+function timingSafeEqual(left, right) {
+  if (left.length !== right.length) return false;
+  let diff = 0;
+  for (let index = 0; index < left.length; index += 1) {
+    diff |= left[index] ^ right[index];
+  }
+  return diff === 0;
+}
+
+function bytesToBase64(bytes) {
+  return btoa(String.fromCharCode(...bytes));
+}
+
+function base64ToBytes(value) {
+  return Uint8Array.from(atob(value), (char) => char.charCodeAt(0));
 }
 
 function selectProvider(env, provider) {

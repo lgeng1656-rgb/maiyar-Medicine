@@ -366,37 +366,17 @@ function ChatPage() {
 
 function AuthDialog({ onClose, onLoggedIn }) {
   const [email, setEmail] = useState('');
-  const [code, setCode] = useState('');
-  const [step, setStep] = useState('email');
+  const [password, setPassword] = useState('');
   const [notice, setNotice] = useState('');
   const [busy, setBusy] = useState(false);
 
-  async function requestCode(event) {
-    event.preventDefault();
+  async function submitAuth(mode) {
     setBusy(true);
     setNotice('');
     try {
-      await apiFetch('/api/auth/request-code', {
+      const login = await apiFetch(mode === 'register' ? '/api/auth/register' : '/api/auth/login', {
         method: 'POST',
-        body: { email },
-      });
-      setStep('code');
-      setNotice('验证码已发送，请查看邮箱。');
-    } catch (error) {
-      setNotice(error.message);
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function verifyCode(event) {
-    event.preventDefault();
-    setBusy(true);
-    setNotice('');
-    try {
-      const login = await apiFetch('/api/auth/verify', {
-        method: 'POST',
-        body: { email, code },
+        body: { email, password },
       });
       const history = await apiFetch('/api/conversations', { token: login.token });
       onLoggedIn(login.token, login.user, history.conversations || []);
@@ -408,8 +388,14 @@ function AuthDialog({ onClose, onLoggedIn }) {
   }
 
   return (
-    <Modal title="邮箱验证码登录" onClose={onClose}>
-      <form className="modal-form" onSubmit={step === 'email' ? requestCode : verifyCode}>
+    <Modal title="邮箱密码登录" onClose={onClose}>
+      <form
+        className="modal-form"
+        onSubmit={(event) => {
+          event.preventDefault();
+          submitAuth('login');
+        }}
+      >
         <label>
           邮箱
           <input
@@ -418,24 +404,25 @@ function AuthDialog({ onClose, onLoggedIn }) {
             placeholder="name@example.com"
             type="email"
             required
-            disabled={step === 'code'}
           />
         </label>
-        {step === 'code' && (
-          <label>
-            验证码
-            <input
-              value={code}
-              onChange={(event) => setCode(event.target.value)}
-              placeholder="6 位数字"
-              inputMode="numeric"
-              required
-            />
-          </label>
-        )}
+        <label>
+          密码
+          <input
+            value={password}
+            onChange={(event) => setPassword(event.target.value)}
+            placeholder="至少 8 位"
+            type="password"
+            required
+            minLength={8}
+          />
+        </label>
         {notice && <p className="notice">{notice}</p>}
         <button type="submit" disabled={busy}>
-          {busy ? '处理中...' : step === 'email' ? '发送验证码' : '登录'}
+          {busy ? '处理中...' : '登录'}
+        </button>
+        <button type="button" className="secondary-button" disabled={busy} onClick={() => submitAuth('register')}>
+          注册新账号
         </button>
       </form>
     </Modal>
@@ -446,7 +433,7 @@ function SettingsDialog({ token, user, onClose, onUserChange }) {
   const [username, setUsername] = useState(user.username || '');
   const [avatarUrl, setAvatarUrl] = useState(user.avatarUrl || '');
   const [newEmail, setNewEmail] = useState('');
-  const [emailCode, setEmailCode] = useState('');
+  const [emailPassword, setEmailPassword] = useState('');
   const [notice, setNotice] = useState('');
   const [busy, setBusy] = useState(false);
 
@@ -469,35 +456,18 @@ function SettingsDialog({ token, user, onClose, onUserChange }) {
     }
   }
 
-  async function requestEmailChange() {
-    setBusy(true);
-    setNotice('');
-    try {
-      await apiFetch('/api/auth/request-email-change', {
-        method: 'POST',
-        token,
-        body: { email: newEmail },
-      });
-      setNotice('新邮箱验证码已发送。');
-    } catch (error) {
-      setNotice(error.message);
-    } finally {
-      setBusy(false);
-    }
-  }
-
   async function confirmEmailChange() {
     setBusy(true);
     setNotice('');
     try {
-      const data = await apiFetch('/api/auth/confirm-email-change', {
+      const data = await apiFetch('/api/auth/change-email', {
         method: 'POST',
         token,
-        body: { email: newEmail, code: emailCode },
+        body: { email: newEmail, password: emailPassword },
       });
       onUserChange(data.user);
       setNewEmail('');
-      setEmailCode('');
+      setEmailPassword('');
       setNotice('邮箱已更换。');
     } catch (error) {
       setNotice(error.message);
@@ -538,20 +508,19 @@ function SettingsDialog({ token, user, onClose, onUserChange }) {
             type="email"
           />
         </label>
-        <div className="inline-actions">
-          <button type="button" onClick={requestEmailChange} disabled={busy || !newEmail.trim()}>
-            发送验证码
-          </button>
-        </div>
         <label>
-          新邮箱验证码
+          当前密码
           <input
-            value={emailCode}
-            onChange={(event) => setEmailCode(event.target.value)}
-            inputMode="numeric"
+            value={emailPassword}
+            onChange={(event) => setEmailPassword(event.target.value)}
+            type="password"
           />
         </label>
-        <button type="button" onClick={confirmEmailChange} disabled={busy || !emailCode.trim()}>
+        <button
+          type="button"
+          onClick={confirmEmailChange}
+          disabled={busy || !newEmail.trim() || !emailPassword.trim()}
+        >
           确认更换邮箱
         </button>
       </div>
