@@ -224,7 +224,12 @@ export async function callVisualModel(env, { frames, prompt, mediaType }) {
 
   const data = await response.json().catch(() => ({}));
   if (!response.ok) {
-    const error = new Error(data?.error?.message || data?.message || '千问视觉模型分析失败');
+    const upstreamMessage =
+      data?.error?.message ||
+      data?.message ||
+      (data?.error ? JSON.stringify(data.error) : '') ||
+      JSON.stringify(data).slice(0, 300);
+    const error = new Error(upstreamMessage || '千问视觉模型分析失败');
     error.status = 502;
     throw error;
   }
